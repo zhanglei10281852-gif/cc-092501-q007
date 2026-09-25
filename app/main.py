@@ -15,6 +15,7 @@ from app.food.router import router as food_router
 from app.food.service import ensure_schema as ensure_food_schema
 from app.hydro.router import router as hydro_router
 from app.hydro.service import ensure_schema as ensure_hydro_schema
+from app.hydro.importer import ensure_import_schema as ensure_hydro_import_schema
 
 
 @asynccontextmanager
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
     ensure_seismic_schema()
     ensure_food_schema()
     ensure_hydro_schema()
+    ensure_hydro_import_schema()
     yield
     close_connection()
 

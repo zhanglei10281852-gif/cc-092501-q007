@@ -5,6 +5,7 @@
 ## 主要模块
 
 - 井点与样本：登记井点坐标、含水层、采样批次和实验室测量结果。
+- 样本批量导入：野外批次先解析校验再暂存，单位统一换算后确认入库，支持幂等重交、行级错误和修正续传。
 - 同位素计算：处理稳定同位素、溶质浓度、检测限和质量守恒约束，反演多个补给端元比例。
 - 污染迁移：计算一维平流、弥散和一阶衰减，提供到达时间和浓度曲线。
 - 任务与审计：保存参数版本、计算输入摘要、置信区间、失败重试和结果差异。
@@ -54,6 +55,37 @@ curl -sS -X POST http://127.0.0.1:8432/api/auth/bootstrap   -H 'Content-Type: ap
 ```
 
 之后通过 `/api/auth/login` 获取会话令牌，并在管理接口请求头中使用 `Authorization: Bearer <token>`。
+
+## 样本批量导入
+
+野外队一次交回数百条记录时，走"暂存 → 修正 → 确认"两段流程，坏行不会进入已确认数据：
+
+```bash
+# 1. 提交批次（batch_key 由来源方生成，重复提交返回原结果，HTTP 200 且 replayed=true）
+curl -sS -X POST http://127.0.0.1:8432/api/hydro/imports \
+  -H 'Content-Type: application/json' \
+  -d '{"batch_key":"LAB-A-20260925-01","source":"甲实验室","rows":[
+        {"well_code":"W-001","sampled_at":"2026-09-20T08:00:00+08:00","observation_type":"solute","unit":"µg/L","value":12500,"detection_limit":5,"measurement_error":0.2},
+        {"well_code":"W-001","sampled_at":"2026-09-20T08:00:00+08:00","observation_type":"isotope_d18o","unit":"‰","value":-7.5}
+      ]}'
+
+# 2. 查看批次与每行状态（含原始字段快照 raw 与修正记录 correction）
+curl -sS http://127.0.0.1:8432/api/hydro/imports/1
+
+# 3. 按行号修正坏行，可多次修正后再确认
+curl -sS -X PATCH http://127.0.0.1:8432/api/hydro/imports/1/rows \
+  -H 'Content-Type: application/json' \
+  -d '{"corrections":[{"line_number":3,"fields":{"unit":"mg/L"}}]}'
+
+# 4. 确认入库（幂等，重复确认返回原结果）；查看某口井已确认观测
+curl -sS -X POST http://127.0.0.1:8432/api/hydro/imports/1/confirm
+curl -sS http://127.0.0.1:8432/api/hydro/wells/1/observations
+```
+
+- 每行校验井点编码、采样时间（ISO 8601，统一归一到 UTC）、观测类型（`isotope_d18o` / `isotope_d2h` / `solute`）、单位与数值范围；坏行在 `errors` 中给出行号与全部原因。
+- 单位统一入库：同位素一律 `‰`；溶质一律 `mg/L`（`µg/L`÷1000、`g/L`×1000，`ug/L`、`μg/L` 等写法自动识别），检测限随单位同步换算。
+- 摘要 `summary` 含 `accepted`（接受）、`rejected`（拒绝）、`converted`（发生单位换算）、`suspected_duplicates`（疑似重复）数量；疑似重复指与本批次其他行或已确认记录在"井点+采样时间+观测类型"上相同，确认时自动跳过。
+- 同一 `batch_key` 提交不同内容返回 409；已确认批次不允许再修正。
 
 ## 测试
 

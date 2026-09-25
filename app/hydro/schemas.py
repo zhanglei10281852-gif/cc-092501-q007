@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -42,6 +44,29 @@ class InversionRequest(BaseModel):
     max_iterations: int = Field(default=500, ge=10, le=10000)
     tolerance: float = Field(default=1e-8, gt=0, le=0.1)
     model_version: str = Field(default="mix-1", min_length=1, max_length=40)
+
+
+class ImportBatchCreate(BaseModel):
+    batch_key: str = Field(..., min_length=1, max_length=128)
+    source: str = Field(..., min_length=1, max_length=120)
+    rows: list[Any] = Field(..., min_length=1, max_length=5000)
+
+    @field_validator("batch_key", "source")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("不能只包含空白字符")
+        return text
+
+
+class ImportRowCorrection(BaseModel):
+    line_number: int = Field(..., ge=1)
+    fields: dict[str, Any] = Field(..., min_length=1)
+
+
+class ImportCorrectRequest(BaseModel):
+    corrections: list[ImportRowCorrection] = Field(..., min_length=1, max_length=5000)
 
 
 class TransportRequest(BaseModel):
