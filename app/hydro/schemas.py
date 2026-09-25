@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -53,4 +55,55 @@ class TransportRequest(BaseModel):
     duration_days: float = Field(..., gt=0, le=100000)
     step_days: float = Field(default=1, gt=0, le=1000)
     model_version: str = Field(default="ade-1", min_length=1, max_length=40)
+
+
+class ImportRow(BaseModel):
+    well_code: str | int | None = None
+    sample_code: str | int | None = None
+    sampled_at: str | None = None
+    observation_type: str | None = None
+    unit: str | None = None
+    value: Any = None
+    detection_limit: Any = None
+    measurement_error: Any = None
+
+    model_config = {"extra": "allow"}
+
+
+class ImportCreate(BaseModel):
+    source_batch_id: str = Field(..., min_length=1, max_length=120)
+    rows: list[ImportRow] = Field(default_factory=list)
+    csv_content: str | None = Field(default=None, max_length=2_000_000)
+
+
+class ImportRowFix(BaseModel):
+    row_number: int = Field(..., ge=1)
+    well_code: str | int | None = None
+    sample_code: str | int | None = None
+    sampled_at: str | None = None
+    observation_type: str | None = None
+    unit: str | None = None
+    value: Any = None
+    detection_limit: Any = None
+    measurement_error: Any = None
+
+    model_config = {"extra": "ignore"}
+
+
+class ImportFixRequest(BaseModel):
+    updates: list[ImportRowFix] = Field(..., min_length=1, max_length=1000)
+
+
+class ImportRowResolution(BaseModel):
+    row_number: int = Field(..., ge=1)
+    resolution: str = Field(..., pattern="^(accepted|rejected)$")
+
+
+class ImportResolveRequest(BaseModel):
+    resolutions: list[ImportRowResolution] = Field(..., min_length=1, max_length=1000)
+
+
+class ImportConfirmRequest(BaseModel):
+    row_numbers: list[int] | None = Field(default=None, max_length=1000)
+
 

@@ -55,6 +55,18 @@ curl -sS -X POST http://127.0.0.1:8432/api/auth/bootstrap   -H 'Content-Type: ap
 
 之后通过 `/api/auth/login` 获取会话令牌，并在管理接口请求头中使用 `Authorization: Bearer <token>`。
 
+## 样本批量导入
+
+野外队可一次提交数百条样本记录（JSON 行或 CSV 文本），导入分“暂存—修正—确认”两阶段，坏行不会污染已确认数据。
+
+1. `POST /api/hydro/imports`：提交 `source_batch_id` 与 `rows`（或 `csv_content`，支持中英文表头）。服务逐行解析校验井点编码、采样时间、观测类型（`d18o`/`d2h`/`solute` 及常见别名）、单位（‰、mg/L、µg/L）与数值范围，并把溶质统一换算为 mg/L。结果仅写入暂存表，返回每行的物理行号、`staged`/`rejected`/`suspected_duplicate` 状态、错误原因、换算后数值与**原始字段快照**。
+2. 校验规则包括：井点不存在、时间/数值无法解析、未知观测类型、不支持单位、换算后超合理范围，以及检测限/误差列疑似错位（误差显著大于检测限）。
+3. `POST /api/hydro/imports/{id}/fix`：按行号修正坏行，原始快照保留，修正后重新校验并可继续确认。
+4. `POST /api/hydro/imports/{id}/resolve-duplicates`：对疑似重复行（批内重复、同样本编号已入库、同井同时刻同类型同值）人工裁定接受或驳回。
+5. `POST /api/hydro/imports/{id}/confirm`：按“井点+样本编号+采样时间”分组，将长表观测合并为一条样本（宽表列）以统一单位入库。含坏行或未裁定重复行的组整组暂缓；显式点名坏组会返回 422 与阻塞行号。已确认行不可修改。
+
+同一 `source_batch_id` 重复提交且内容一致时直接返回原批次结果（响应带 `replayed: true`，包含后续确认进度）；同批次号但内容不同返回 422。导入摘要包含接受、拒绝、单位转换、疑似重复、已确认数量与本次新增样本数，所有暂存、修正、裁定和确认动作写入 `hydro_audit`。
+
 ## 测试
 
 ```bash
